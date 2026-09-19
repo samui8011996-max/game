@@ -159,6 +159,18 @@ function openRecipePaint(){
       <canvas id="rcPaint" width="${PAINT_GRID*PAINT_CELL}" height="${PAINT_GRID*PAINT_CELL}"
         style="border:2px solid var(--line2);border-radius:8px;background:var(--card);touch-action:none;cursor:crosshair"></canvas>
     </div>
+    <div style="display:flex;align-items:flex-end;justify-content:center;gap:18px;margin-bottom:10px">
+      <div style="text-align:center">
+        <canvas id="rcPrevTable" width="${PAINT_GRID}" height="${PAINT_GRID}"
+          style="width:62px;height:62px;image-rendering:pixelated"></canvas>
+        <div class="small">廚房桌上</div>
+      </div>
+      <div style="text-align:center">
+        <canvas id="rcPrevList" width="${PAINT_GRID}" height="${PAINT_GRID}"
+          style="width:32px;height:32px;image-rendering:pixelated"></canvas>
+        <div class="small">清單圖示</div>
+      </div>
+    </div>
     <div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-bottom:10px">${sw}</div>
     <button class="btn ghost sm" style="width:100%;margin-bottom:6px" onclick="paintClear()">🗑️ 全部清掉</button>
     <button class="btn green" style="width:100%" onclick="openCustomRecipe()">完成</button>`);
@@ -180,6 +192,19 @@ function drawPaint(){
   for(let i=1; i<PAINT_GRID; i++){
     c.beginPath(); c.moveTo(i*PAINT_CELL,0); c.lineTo(i*PAINT_CELL,cv.height); c.stroke();
     c.beginPath(); c.moveTo(0,i*PAINT_CELL); c.lineTo(cv.width,i*PAINT_CELL); c.stroke();
+  }
+  drawPreviews();
+}
+/* 放大畫跟實際大小差很多，所以同步顯示遊戲內的真實尺寸 */
+function drawPreviews(){
+  for(const id of ['rcPrevTable','rcPrevList']){
+    const pv = document.getElementById(id); if(!pv) continue;
+    const p = pv.getContext('2d');
+    p.clearRect(0,0,PAINT_GRID,PAINT_GRID);
+    for(let y=0; y<PAINT_GRID; y++) for(let x=0; x<PAINT_GRID; x++){
+      const v = rDraft.px[y*PAINT_GRID+x];
+      if(v > 0){ p.fillStyle = PAINT_COLORS[v]; p.fillRect(x,y,1,1); }
+    }
   }
 }
 function bindPaint(){
