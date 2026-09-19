@@ -9,8 +9,8 @@
 
 const CUSTOM_PRICE_MUL = 1.4;    // 售價 = 材料成本 × 這個倍率
 const CUSTOM_BATCH     = 30;     // 與既有食譜一致
-const PAINT_GRID       = 16;     // 圖示是 16×16 像素
-const PAINT_CELL       = 16;     // 編輯時每格畫多大
+const PAINT_GRID       = 32;     // 對齊既有的 food_*.png，它們全是 32×32
+const PAINT_CELL       = 10;     // 編輯時每格畫多大（32×10 = 320px 畫布）
 /* 烤秒數固定三檔，彼此相距 4 秒：matchRecipe 容許 ±1.5 秒，
    間隔小於 3 秒的兩道同材料食譜會互相蓋掉，所以不能讓玩家自由填 */
 const BAKE_CHOICES = [
@@ -172,7 +172,8 @@ function openRecipePaint(){
     </div>
     <div style="text-align:center;margin-bottom:10px">
       <canvas id="rcPaint" width="${PAINT_GRID*PAINT_CELL}" height="${PAINT_GRID*PAINT_CELL}"
-        style="border:2px solid var(--line2);border-radius:8px;background:var(--card);touch-action:none;cursor:crosshair"></canvas>
+        style="width:100%;max-width:${PAINT_GRID*PAINT_CELL}px;aspect-ratio:1;border:2px solid var(--line2);
+        border-radius:8px;background:var(--card);touch-action:none;cursor:crosshair"></canvas>
     </div>
     <div style="display:flex;align-items:flex-end;justify-content:center;gap:18px;margin-bottom:10px">
       <div style="text-align:center">
@@ -338,8 +339,9 @@ function drawPaint(ghost){
     for(const [x,y] of ghost) c.fillRect(x*PAINT_CELL, y*PAINT_CELL, PAINT_CELL, PAINT_CELL);
     c.globalAlpha = 1;
   }
-  c.strokeStyle = 'rgba(0,0,0,.08)'; c.lineWidth = 1;
+  c.lineWidth = 1;
   for(let i=1; i<PAINT_GRID; i++){
+    c.strokeStyle = i % 8 ? 'rgba(0,0,0,.07)' : 'rgba(0,0,0,.22)';   // 每 8 格一條深線好定位
     c.beginPath(); c.moveTo(i*PAINT_CELL,0); c.lineTo(i*PAINT_CELL,cv.height); c.stroke();
     c.beginPath(); c.moveTo(0,i*PAINT_CELL); c.lineTo(cv.width,i*PAINT_CELL); c.stroke();
   }
