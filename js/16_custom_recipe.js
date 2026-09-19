@@ -84,7 +84,12 @@ function drawPlateInto(c, size){
   c.drawImage(im, 0,0, im.naturalWidth, im.naturalHeight, 0,0, size, size);
 }
 
+/* 亞瑟只做得出毒物，會下廚的是伴侶——研發自然也得由他來 */
+function cookPartner(){ return S.partner ? charName(S.partner.id) : null; }
+
 function openCustomRecipe(){
+  const who = cookPartner();
+  if(!who){ toast('你自己下廚只會做出毒物。等有了伴侶再研發吧'); return; }
   if(!rDraft) rDraft = newDraft();
   const d = rDraft;
 
@@ -117,7 +122,7 @@ function openCustomRecipe(){
   const painted = d.px.some(v => v);
 
   openSheet(`<div class="sheethead"><h3>🧪 研發新料理</h3><button class="close" onclick="closeSheet()">✕</button></div>
-    <div class="small" style="margin-bottom:8px">選材料、決定做法、取名字、畫張圖。售價由材料成本自動算出。</div>
+    <div class="small" style="margin-bottom:8px">跟${who}一起試做。選材料、決定做法、取名字、畫張圖。售價由材料成本自動算出。</div>
 
     <b class="small">已選材料</b>${chosenHtml}
     <div class="hr"></div><b class="small">從背包加入</b>${bagHtml}
@@ -492,7 +497,11 @@ openPickRecipe = function(){
   _openPickRecipeBase();
   const head = document.querySelector('#sheet .sheethead');
   if(!head) return;
-  let extra = `<button class="btn gold" style="width:100%;margin:8px 0" onclick="openCustomRecipe()">🧪 研發新料理</button>`;
+  const who = cookPartner();
+  let extra = who
+    ? `<button class="btn gold" style="width:100%;margin:8px 0" onclick="openCustomRecipe()">🧪 跟${who}研發新料理</button>`
+    : `<button class="btn dis" style="width:100%;margin:8px 0">🧪 研發新料理</button>
+       <div class="small" style="color:var(--ink2);margin-bottom:8px">你一個人下廚只會做出毒物。有了伴侶才能研發新菜。</div>`;
   const mine = Object.keys(S.customRecipes || {});
   if(mine.length){
     extra += `<div class="small" style="margin-bottom:4px">我設計的料理</div>` + mine.map(id =>
