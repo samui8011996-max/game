@@ -70,7 +70,7 @@ function registerCustomRecipe(id, r){
 /* ---------------- 設計中的草稿 ---------------- */
 let rDraft = null;
 function newDraft(){
-  return { ings:{}, knead:3, bake:9000, nm:'', plate:true,
+  return { ings:{}, knead:3, bake:9000, nm:'', plate:false,
            px:new Array(PAINT_GRID*PAINT_GRID).fill(0) };
 }
 
@@ -212,7 +212,7 @@ function openRecipePaint(){
     </div>
     <div style="display:flex;gap:6px;margin-bottom:6px">
       <button class="btn sm ${rDraft.plate?'green':'ghost'}" style="flex:1" onclick="paintTogglePlate()">
-        🍽️ 盤子底圖${rDraft.plate?'：開':'：關'}</button>
+        🍽️ ${rDraft.plate?'移除盤子':'加上盤子'}</button>
       <button class="btn ghost sm" style="flex:1" onclick="paintClear()">🗑️ 清掉我畫的</button>
     </div>
     <button class="btn green" style="width:100%" onclick="openCustomRecipe()">完成</button>`);
