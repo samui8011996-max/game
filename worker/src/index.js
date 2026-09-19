@@ -2,9 +2,10 @@ import Anthropic from "@anthropic-ai/sdk";
 
 const MODEL = "claude-haiku-4-5";
 const MOODS = ["neutral", "happy", "shy", "love", "sad"];
+const MAX_VARIANTS = 5;          // 一次最多幾段，同時是濫用時的成本上限
 
 /* 輸出被鎖死成這個形狀：就算有人拿到網址亂打，也擠不出通用的 LLM 回應 */
-const DIALOGUE_SCHEMA = {
+const convoSchema = {
   type: "object",
   properties: {
     q: { type: "string" },
@@ -27,6 +28,12 @@ const DIALOGUE_SCHEMA = {
   required: ["q", "opts"],
   additionalProperties: false,
 };
+const batchSchema = (n) => ({
+  type: "object",
+  properties: { items: { type: "array", minItems: n, maxItems: n, items: convoSchema } },
+  required: ["items"],
+  additionalProperties: false,
+});
 
 const cors = (origin) => ({
   "Access-Control-Allow-Origin": origin || "*",
@@ -44,14 +51,14 @@ const json = (body, status, origin) =>
 /* 客戶端傳來的都是不可信字串，一律截斷後才進 prompt */
 const str = (v, max) => (typeof v === "string" ? v.slice(0, max) : "");
 
-function buildSystem(b) {
+function buildSystem(b, variants) {
   const aff = Math.max(0, Math.min(100, Number(b.aff) || 0));
   const stage = aff >= 60 ? "很親近" : aff >= 30 ? "熟識" : aff >= 10 ? "點頭之交" : "剛認識";
   const hint = str(b.hintItem, 20);
 
-  return [
+  const lines = [
     "你是一款繁體中文農場經營遊戲的對話生成器。玩家角色叫「亞瑟」。",
-    "請為一位 NPC 生成一句主動搭話，以及三個玩家可選的回應。",
+    `請為一位 NPC 生成 ${variants.length} 段彼此不重複的搭話，每段都附三個玩家可選的回應。`,
     "",
     `角色名字：${str(b.name, 40)}`,
     `角色人設：${str(b.seed, 200)}`,
@@ -61,17 +68,20 @@ function buildSystem(b) {
     "規則：",
     "1. 全部使用繁體中文，口吻符合人設與時代。",
     "2. q 是角色對亞瑟說的一句話，20～45 字。",
-    "3. opts 必須剛好三個，依序對應以下三種態度，順序不可調換：",
-    `   [1] ${str(b.tones?.[0], 30)}`,
-    `   [2] ${str(b.tones?.[1], 30)}`,
-    `   [3] ${str(b.tones?.[2], 30)}`,
-    "4. t 是亞瑟的回應（15～30 字）；r 是角色聽到後的反應（20～40 字）。",
-    "5. 絕對不要提到數字、好感度、選項編號或任何遊戲系統詞彙。",
-    "6. mood 要符合 r 的情緒。",
+    "3. t 是亞瑟的回應（15～30 字）；r 是角色聽到後的反應（20～40 字）。",
+    "4. 絕對不要提到數字、好感度、選項編號或任何遊戲系統詞彙。",
+    "5. mood 要符合 r 的情緒。",
+    `6. items 必須剛好 ${variants.length} 段，每段的三個選項依序對應下列態度，順序不可調換：`,
+  ];
+  variants.forEach((v, i) => {
+    lines.push(`   第 ${i + 1} 段 → [1] ${str(v[0], 30)}　[2] ${str(v[1], 30)}　[3] ${str(v[2], 30)}`);
+  });
+  lines.push(
     hint
-      ? `7. 請讓角色自然地把話題帶到「${hint}」，透露他很喜歡這個東西，但不可以直接開口討要。`
-      : "7. 話題貼近日常：天氣、生意、農活、最近的見聞。",
-  ].join("\n");
+      ? `7. 其中一段請讓角色自然地把話題帶到「${hint}」，透露他很喜歡這個東西，但不可以直接開口討要。`
+      : "7. 話題貼近日常：天氣、生意、農活、最近的見聞。每段主題要不同。"
+  );
+  return lines.join("\n");
 }
 
 export default {
@@ -89,18 +99,20 @@ export default {
     } catch {
       return json({ error: "bad json" }, 400, origin);
     }
-    if (!Array.isArray(body.tones) || body.tones.length !== 3)
-      return json({ error: "tones must be 3" }, 400, origin);
+
+    const variants = Array.isArray(body.variants) ? body.variants.slice(0, MAX_VARIANTS) : [];
+    if (!variants.length || variants.some((v) => !Array.isArray(v) || v.length !== 3))
+      return json({ error: "variants must be arrays of 3 tones" }, 400, origin);
 
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
     try {
       const res = await client.messages.create({
         model: MODEL,
-        max_tokens: 2048,
-        system: buildSystem(body),
-        messages: [{ role: "user", content: "生成這一輪對話。" }],
-        output_config: { format: { type: "json_schema", schema: DIALOGUE_SCHEMA } },
+        max_tokens: Math.min(8000, 1200 * variants.length),
+        system: buildSystem(body, variants),
+        messages: [{ role: "user", content: "生成這一批對話。" }],
+        output_config: { format: { type: "json_schema", schema: batchSchema(variants.length) } },
       });
 
       if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, origin);

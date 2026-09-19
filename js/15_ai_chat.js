@@ -86,23 +86,36 @@ function aiValidate(d){
   return d;
 }
 
-const AI_MOCK = {
-  q:'（測試用）今天海風有點大，你那邊的田還撐得住嗎？',
-  opts:[
-    { t:'（測試）不關你的事。',       r:'……這樣啊，是我多問了。', mood:'sad' },
-    { t:'（測試）還行，塌了兩壟。',   r:'兩壟而已？那算你走運了。', mood:'neutral' },
-    { t:'（測試）你要不要來幫我看看？', r:'（笑）等我收了攤就過去，你可別反悔。', mood:'happy' } ],
-};
+const MOCK_TOPICS = [
+  '今天海風有點大，你那邊的田還撐得住嗎？',
+  '昨天有人拿一袋爛貨想騙我，被我當場退回去了。',
+  '你上次說要來看我新進的那批貨，還算不算數？',
+  '欸，你最近氣色不錯。是農閒了還是遇到什麼好事？',
+  '這條街的租金又漲了，我在想要不要換個攤位。',
+];
+let _mockSeq = 0;
+function mockConvo(){
+  const q = MOCK_TOPICS[_mockSeq++ % MOCK_TOPICS.length];
+  return { q:`（測試${_mockSeq}）${q}`, opts:[
+    { t:'（測試）不關你的事。',       r:'……這樣啊，是我多問了。',               mood:'sad' },
+    { t:'（測試）還行吧。',           r:'嗯，那就好。',                         mood:'neutral' },
+    { t:'（測試）要不要我幫忙？',     r:'（笑）等我收了攤就去找你，別反悔。',   mood:'happy' } ] };
+}
 
-async function aiGenerate(id, slots){
+/* 一次要 n 段。每段各自抽插槽，語氣不同，回來要跟插槽配對。 */
+async function aiGenerateBatch(id, n){
+  const slotsList = [];
+  for(let i = 0; i < n; i++) slotsList.push(pickSlots(id));
+
   if(AI_CHAT.mock){
-    await new Promise(r => setTimeout(r, 900));
-    return aiValidate(JSON.parse(JSON.stringify(AI_MOCK)));
+    await new Promise(r => setTimeout(r, 600));
+    return slotsList.map(s => ({ slots:s, data:aiValidate(mockConvo()), mock:true }))
+                    .filter(x => x.data);
   }
-  if(!AI_CHAT.endpoint) return null;
+  if(!AI_CHAT.endpoint) return [];
 
   const ctl = new AbortController();
-  const timer = setTimeout(()=>ctl.abort(), AI_CHAT.timeoutMs);
+  const timer = setTimeout(() => ctl.abort(), AI_CHAT.timeoutMs);
   try{
     const pref = CHAR_PREFS[id] || {};
     const res = await fetch(AI_CHAT.endpoint, {
@@ -114,48 +127,88 @@ async function aiGenerate(id, slots){
         seed: pref.seed || '',
         aff: (S.port.relations[id]||{}).aff || 0,
         era: S.era,
-        tones: slots.map(s=>s.tone),
+        variants: slotsList.map(s => s.map(x => x.tone)),   // 一次要 n 組語氣
         hintItem: pickHint(id),
       }),
     });
-    if(!res.ok) return null;
-    return aiValidate(await res.json());
+    if(!res.ok) return [];
+    const body = await res.json();
+    const items = Array.isArray(body.items) ? body.items : [];
+    return items.map((d, i) => ({ slots:slotsList[i], data:aiValidate(d) }))
+                .filter(x => x.data && x.slots);
   }catch{
-    return null;
+    return [];
   }finally{
     clearTimeout(timer);
   }
 }
 
-const sheetOpen = () => document.getElementById('mask').classList.contains('show');
+/* ---------------- 存貨 ---------------- */
+const AI_CACHE = { target:5, refillAt:2 };
+const _refilling = {};
 
-let _aiSeq = 0;
+function cacheFor(id){
+  if(!S.aiCache) S.aiCache = {};                 // 舊存檔相容
+  if(!S.aiCache[id]) S.aiCache[id] = [];
+  return S.aiCache[id];
+}
+/* mock 產生的存貨不能留到正式模式用，否則玩家會看到「（測試3）」 */
+function cachePurgeMock(id){
+  const q = cacheFor(id);
+  if(AI_CHAT.mock) return q;
+  const kept = q.filter(x => !x.mock);
+  if(kept.length !== q.length){ S.aiCache[id] = kept; save(); }
+  return S.aiCache[id];
+}
+function cacheTake(id){
+  const q = cachePurgeMock(id);
+  if(!q.length) return null;
+  const item = q.shift();
+  save();
+  return item;
+}
+function cacheRefill(id){
+  if(!AI_CHAT.enabled || _refilling[id]) return;
+  const q = cachePurgeMock(id);
+  if(q.length > AI_CACHE.refillAt) return;
+  _refilling[id] = true;
+  aiGenerateBatch(id, AI_CACHE.target - q.length)
+    .then(list => { if(list.length){ cacheFor(id).push(...list); save(); } })
+    .catch(() => {})
+    .finally(() => { _refilling[id] = false; });
+}
+
+function renderAiChat(id, data, slots){
+  const rel = S.port.relations[id];
+  const choices = shuffled(3).map(i => ({
+    t: data.opts[i].t,
+    run: ()=>{
+      rel.lastChat = Date.now();
+      rel.aff += slots[i].aff;
+      save();
+      const o = data.opts[i], d = slots[i].aff;
+      showDialogue(id, o.mood, `${o.r}（好感 ${d>=0?'+':''}${d}）`, [
+        { t:'結束對話', cls:'green', run:()=>openMerchant(id) } ]);
+    },
+  }));
+  showDialogue(id, 'neutral', data.q, choices);
+}
+
 const _chatMerchantStatic = chatMerchant;
-
 chatMerchant = function(id){
   const rel = S.port.relations[id];
   if(Date.now() - (rel.lastChat||0) < 8000){ toast('剛聊過了，等一下'); return; }
   if(!AI_CHAT.enabled){ _chatMerchantStatic(id); return; }
 
-  const slots = pickSlots(id), seq = ++_aiSeq;
-  showDialogue(id, 'neutral', '（……）', [
-    { t:'算了', cls:'ghost', run:()=>{ _aiSeq++; openMerchant(id); } } ]);
+  const hit = cacheTake(id);
+  cacheRefill(id);                                 // 背景補貨，不等它
+  if(!hit){ _chatMerchantStatic(id); return; }     // 沒存貨就走靜態，玩家永遠不用等
+  renderAiChat(id, hit.data, hit.slots);
+};
 
-  aiGenerate(id, slots).then(data => {
-    if(seq !== _aiSeq || !sheetOpen()) return;   // 玩家按了算了、又點一次、或跑掉了
-    if(!data){ _chatMerchantStatic(id); return; }
-
-    const choices = shuffled(3).map(i => ({
-      t: data.opts[i].t,
-      run: ()=>{
-        rel.lastChat = Date.now();
-        rel.aff += slots[i].aff;
-        save();
-        const o = data.opts[i], d = slots[i].aff;
-        showDialogue(id, o.mood, `${o.r}（好感 ${d>=0?'+':''}${d}）`, [
-          { t:'結束對話', cls:'green', run:()=>openMerchant(id) } ]);
-      },
-    }));
-    showDialogue(id, 'neutral', data.q, choices);
-  });
+/* 進商店就先備貨，等玩家想聊天時通常已經有存貨了 */
+const _openMerchantWarm = openMerchant;
+openMerchant = function(id){
+  cacheRefill(id);
+  return _openMerchantWarm(id);
 };
