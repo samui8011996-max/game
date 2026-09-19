@@ -1,6 +1,10 @@
 /* =========================================================
-   18_dutch_shop.js — 霍蘭德的外地方子
-   自己研發的食譜自己免費用；別人研發的要來他這裡花錢學。
+   18_dutch_shop.js — 別人研發的食譜
+   自己研發的自己免費用；別人研發的要在霍蘭德的商店花錢買。
+
+   共享食譜註冊時帶上 shop:true 與 learnCost，就直接進了商店
+   既有的「📖 配方」區，沿用 openShopBuy 與 buyRecipe，
+   不另開選單、不另寫購買流程。
 
    學費由材料成本推算，投稿者決定不了——同自訂食譜售價、
    聊天好感插槽、委託報酬的原則：創意歸玩家，數值歸遊戲。
@@ -16,12 +20,6 @@ const SHARED = {
   endpoint: '',             // 之後填 D1 的 Worker 端點
   timeoutMs: 8000,
 };
-
-const KEEPER_RECIPE_LINES = [
-  '「外地傳來的方子。人家想破頭寫出來的，你出點錢就學得走。」',
-  '「紙上幾行字，抵得過你在廚房瞎摸三個月。要不要，隨你。」',
-  '「我只管收錢。做出來難吃，別回來找我。」',
-];
 
 function learnCost(ings){
   let c = 0;
@@ -88,81 +86,34 @@ function refreshShared(){
     .finally(() => { _sharedBusy = false; });
 }
 
-/* 註冊進 RECIPES 才做得出來；學不學得會另外由 S.recipesCooked 控制 */
+/* shop:true + learnCost 就會自動出現在商店的「📖 配方」區 */
 function registerShared(){
   for(const r of (S.sharedRecipes || [])){
     if(RECIPES[r.id]) continue;
-    if(S.customRecipes && S.customRecipes[r.id]) continue;        // 自己做的不重複收
+    if(S.customRecipes && S.customRecipes[r.id]) continue;        // 自己研發的不用跟人買
     if(recipeClash(r.ingredients, r.bakeMs, r.id)) continue;      // 會遮蔽既有食譜就不收
     RECIPES[r.id] = {
       nm: esc(r.nm).slice(0, 16), e:'🍲',
       price: customPrice(r.ingredients), batch: CUSTOM_BATCH,
       knead: r.knead, bakeMs: r.bakeMs, ingredients: r.ingredients,
       custom: true, shared: true, author: esc(r.author || '').slice(0, 16),
+      shop: true, learnCost: learnCost(r.ingredients),
     };
     if(r.img && /^data:image\/png;base64,/.test(r.img)) FOOD_IMG_SRC[r.id] = r.img;
   }
 }
 
-function sharedOnSale(){
-  return (S.sharedRecipes || [])
-    .filter(r => RECIPES[r.id] && RECIPES[r.id].shared)
-    .filter(r => !(S.customRecipes && S.customRecipes[r.id]));    // 自己研發的不用跟他買
-}
-
-/* ---------------- 子商店 ---------------- */
-function openSharedRecipes(){
+const _openShopBuyShared = openShopBuy;
+openShopBuy = function(){
   registerShared();
-  refreshShared();                                                 // 背景更新，不擋畫面
-
-  const list = sharedOnSale();
-  const body = list.length ? list.map(r => {
-    const rec = RECIPES[r.id], got = S.recipesCooked && S.recipesCooked[r.id];
-    const cost = learnCost(rec.ingredients);
-    const ing = Object.keys(rec.ingredients).map(k => `${ingNm(k)}${rec.ingredients[k]}`).join('・');
-    return `<div class="row"><div class="e">${dishIcon(r.id)}</div>
-      <div class="info"><div class="n">${rec.nm}</div>
-        <div class="small">${rec.author ? rec.author + ' 研發' : '無名氏'}・售價 $${rec.price}</div>
-        <div class="small" style="color:var(--ink2)">${ing}・揉${rec.knead}次・烤${fmtBakeMin(rec.bakeMs)}</div></div>
-      ${got ? '<div class="price">已學會</div>'
-            : `<div class="price">$${cost}</div><button class="btn sm gold" onclick="buySharedRecipe('${r.id}')">學</button>`}
-      </div>`;
-  }).join('') : '<div class="empty-note">最近沒有新方子進來。</div>';
-
-  const line = KEEPER_RECIPE_LINES[(Math.random() * KEEPER_RECIPE_LINES.length) | 0];
-  openSheet(`<div class="sheethead"><h3>📜 外地方子</h3><button class="close" onclick="openKeeper()">✕</button></div>
-    <div style="background:var(--card);border:2px solid var(--line2);border-radius:12px;padding:10px;margin-bottom:10px;font-size:14px;line-height:1.6">${line}</div>
-    <div class="small" style="margin-bottom:8px">💰 現金 $${fmt(S.cash)}・學會之後就會出現在你的食譜本裡</div>
-    ${body}`);
-}
-
-function buySharedRecipe(id){
-  const rec = RECIPES[id];
-  if(!rec || !rec.shared) return;
-  if(S.recipesCooked && S.recipesCooked[id]){ toast('食譜本已經有這道了'); return; }
-  const cost = learnCost(rec.ingredients);
-  if(S.cash < cost){ toast('現金不足'); return; }
-  spend(cost, `向霍蘭德學${rec.nm}的做法`);
-  if(!S.recipesCooked) S.recipesCooked = {};
-  S.recipesCooked[id] = true;
-  save();
-  toast(`📖 學會了 ${rec.nm}！`);
-  openSharedRecipes();
-}
-
-/* ---------------- 掛進霍蘭德的選單 ---------------- */
-const _openKeeperShared = openKeeper;
-openKeeper = function(){
-  _openKeeperShared();
-  const tulipBtn = document.querySelector('#sheet button[onclick="openTulip()"]');
-  if(tulipBtn) tulipBtn.insertAdjacentHTML('afterend',
-    `<button class="btn gold" style="width:100%;margin-bottom:6px" onclick="openSharedRecipes()">📜 外地方子</button>`);
+  refreshShared();                                                // 背景更新，不擋畫面
+  _openShopBuyShared();
 };
 
 const _startGameShared = startGame;
 startGame = function(n){
   _startGameShared(n);
-  if(!S.sharedRecipes) S.sharedRecipes = [];                       // 舊存檔相容
+  if(!S.sharedRecipes) S.sharedRecipes = [];                      // 舊存檔相容
   registerShared();
   save();
 };

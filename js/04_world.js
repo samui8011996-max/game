@@ -998,8 +998,8 @@ function openShopBuy(){
     if(recipeEra(k)>S.era) continue;                // 沒到時代不賣（想全賣就刪這行）
     const known=recipeKnown(k);
     const cost=Math.round((r.learnCost||60)*shopBuyMul());
-    recipes+=`<div class="row"><div class="e">${recipeIcon(32)}</div><div class="info"><div class="n">${r.nm}配方</div>
-      <div class="d">${known?'已學會（看食譜本）':'買了才知道做法'}</div></div>
+    recipes+=`<div class="row"><div class="e">${r.shared?dishIcon(k):recipeIcon(32)}</div><div class="info"><div class="n">${r.nm}配方</div>
+      <div class="d">${r.author?r.author+' 研發・':''}${known?'已學會（看食譜本）':'買了才知道做法'}</div></div>
       <div class="price">$${cost}</div>
       <button class="btn sm ${known?'dis':''}" onclick="buyRecipe('${k}')">${known?'已學會':'買'}</button></div>`;
   }
