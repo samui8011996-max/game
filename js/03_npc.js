@@ -399,7 +399,7 @@ function updateShots(){
 }
 /* ---------- 對話系統（選項＋表情） ---------- */
 const CHARS={
-  Francis:{ nm:'弗朗西斯·波諾弗瓦', face:{ neutral:'Francis_neutral.png', happy:'Francis_happy.png', shy:'Francis_shy.png', love:'Francis_love.png', sad:'😢' } },
+  Francis:{ nm:'弗朗西斯·波諾弗瓦', face:{ neutral:'💁‍♂️', happy:'😌', shy:'😳', love:'😘', sad:'😢' } },
   Pedro: { nm:'佩德羅·費爾南德斯·卡里埃多', face:{ neutral:'🧔',   happy:'😄', shy:'😅', love:'😍', sad:'😟' } },
   Antonio:{ nm:'安東尼奧·費爾南德斯·卡里埃多',   face:{ neutral:'👩‍🦰', happy:'😊', shy:'😳', love:'🥰', sad:'😢' } },
   Alfred:{ nm:'阿爾弗雷德·F·瓊斯',   face:{ neutral:'🤵', happy:'😎', shy:'😏', love:'😍', sad:'😞' } },
@@ -412,7 +412,7 @@ function showDialogue(charId, mood, text, choices){
   _dlgChoices=choices||[];
   const face=charFace(charId,mood), nm=charName(charId);
   const faceHtml = /\.(png|jpe?g|gif|webp)$/i.test(face)
-    ? `<img src="${face}" style="width:110px;height:110px;object-fit:contain;image-rendering:pixelated">`
+    ? `<img src="${face}" style="width:110px;height:110px;object-fit:contain;image-rendering:pixelated" onerror="this.outerHTML='<span style=&quot;font-size:56px&quot;>🙂</span>'">`
     : `<span style="font-size:56px">${face}</span>`;
   const btns=_dlgChoices.map((c,i)=>`<button class="btn ${c.cls||''}" style="width:100%;margin-bottom:6px" onclick="dlgChoice(${i})">${c.t}</button>`).join('');
   openSheet(`<div class="sheethead"><h3>${nm}</h3><button class="close" onclick="closeSheet()">✕</button></div>
