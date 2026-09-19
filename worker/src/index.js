@@ -35,6 +35,24 @@ const batchSchema = (n) => ({
   additionalProperties: false,
 });
 
+/* 委託：只要說辭，報酬與數量都由遊戲端決定，這裡拿不到也改不了 */
+const questSchema = (n) => ({
+  type: "object",
+  properties: {
+    items: {
+      type: "array", minItems: n, maxItems: n,
+      items: {
+        type: "object",
+        properties: { why: { type: "string" }, thanks: { type: "string" } },
+        required: ["why", "thanks"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["items"],
+  additionalProperties: false,
+});
+
 const cors = (origin) => ({
   "Access-Control-Allow-Origin": origin || "*",
   "Access-Control-Allow-Headers": "content-type,x-game-token",
@@ -84,6 +102,33 @@ function buildSystem(b, variants) {
   return lines.join("\n");
 }
 
+function buildQuestSystem(b, asks) {
+  const aff = Math.max(0, Math.min(100, Number(b.aff) || 0));
+  const stage = aff >= 60 ? "很親近" : aff >= 30 ? "熟識" : "點頭之交";
+  const lines = [
+    "你是一款繁體中文農場經營遊戲的對話生成器。玩家角色叫「亞瑟」。",
+    `這位 NPC 想拜託亞瑟幫忙蒐集東西。請為以下 ${asks.length} 筆請求各寫兩句話。`,
+    "",
+    `角色名字：${str(b.name, 40)}`,
+    `角色人設：${str(b.seed, 200)}`,
+    `對亞瑟的好感度：${aff}/100（${stage}）`,
+    `時代背景：${Number(b.era) || 18} 世紀的英國`,
+    "",
+    "規則：",
+    "1. 全部使用繁體中文，口吻符合人設與時代。",
+    "2. why：開口拜託的話，要講出一個具體又符合人設的理由，30～60 字。",
+    "3. thanks：收到東西時說的話，20～40 字。",
+    "4. 絕對不要提到報酬金額、好感度或任何遊戲系統詞彙——報酬由遊戲決定，你不知道也不要猜。",
+    "5. 每筆理由都要不同，不要套同一個模板。",
+    "",
+    "請求清單：",
+  ];
+  asks.forEach((a, i) => {
+    lines.push(`   ${i + 1}. ${str(a.item, 20)} ${Math.max(1, Math.min(99, Number(a.qty) || 1))} 個`);
+  });
+  return lines.join("\n");
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin");
@@ -100,19 +145,34 @@ export default {
       return json({ error: "bad json" }, 400, origin);
     }
 
-    const variants = Array.isArray(body.variants) ? body.variants.slice(0, MAX_VARIANTS) : [];
-    if (!variants.length || variants.some((v) => !Array.isArray(v) || v.length !== 3))
-      return json({ error: "variants must be arrays of 3 tones" }, 400, origin);
+    let system, schema, n, ask;
+    if (body.kind === "quest") {
+      const asks = Array.isArray(body.asks) ? body.asks.slice(0, MAX_VARIANTS) : [];
+      if (!asks.length || asks.some((a) => !a || typeof a.item !== "string"))
+        return json({ error: "asks must be [{item, qty}]" }, 400, origin);
+      n = asks.length;
+      system = buildQuestSystem(body, asks);
+      schema = questSchema(n);
+      ask = "寫出這一批委託的說辭。";
+    } else {
+      const variants = Array.isArray(body.variants) ? body.variants.slice(0, MAX_VARIANTS) : [];
+      if (!variants.length || variants.some((v) => !Array.isArray(v) || v.length !== 3))
+        return json({ error: "variants must be arrays of 3 tones" }, 400, origin);
+      n = variants.length;
+      system = buildSystem(body, variants);
+      schema = batchSchema(n);
+      ask = "生成這一批對話。";
+    }
 
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
 
     try {
       const res = await client.messages.create({
         model: MODEL,
-        max_tokens: Math.min(8000, 1200 * variants.length),
-        system: buildSystem(body, variants),
-        messages: [{ role: "user", content: "生成這一批對話。" }],
-        output_config: { format: { type: "json_schema", schema: batchSchema(variants.length) } },
+        max_tokens: Math.min(8000, 1200 * n),
+        system,
+        messages: [{ role: "user", content: ask }],
+        output_config: { format: { type: "json_schema", schema } },
       });
 
       if (res.stop_reason === "refusal") return json({ error: "refused" }, 422, origin);
