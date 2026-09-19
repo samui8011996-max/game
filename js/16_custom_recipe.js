@@ -18,8 +18,10 @@ const BAKE_CHOICES = [
   { ms: 9000,  nm: '9 分鐘（中火）' },
   { ms: 13000, nm: '13 分鐘（慢燉）' },
 ];
+/* 預設色盤。px 陣列存的是實際色碼字串（或 0 = 空白），不是索引，
+   這樣色環選的任意顏色才放得進去 */
 const PAINT_COLORS = [
-  null, '#3b2a1a', '#8b5a2b', '#c8874a', '#e8c48a', '#f3e4c0',
+  '#3b2a1a', '#8b5a2b', '#c8874a', '#e8c48a', '#f3e4c0',
   '#7a2d2d', '#c0392b', '#e8734a', '#d9a441', '#f2d94e',
   '#4a6b2a', '#7fa650', '#b6d07a', '#2e5f6b', '#6fa8bd',
 ];
@@ -101,7 +103,7 @@ function openCustomRecipe(){
     `<button class="btn sm ${d.bake===b.ms?'green':'ghost'}" style="width:100%;margin-bottom:4px"
       onclick="draftBake(${b.ms})">${b.nm}</button>`).join('');
 
-  const painted = d.px.some(v => v > 0);
+  const painted = d.px.some(v => v);
 
   openSheet(`<div class="sheethead"><h3>🧪 研發新料理</h3><button class="close" onclick="closeSheet()">✕</button></div>
     <div class="small" style="margin-bottom:8px">選材料、決定做法、取名字、畫張圖。售價由材料成本自動算出。</div>
@@ -145,16 +147,29 @@ function draftKnead(n){ rDraft.knead = n; openCustomRecipe(); }
 function draftBake(ms){ rDraft.bake = ms; openCustomRecipe(); }
 
 /* ---------------- 圖示編輯器 ---------------- */
-let paintColor = 1;
+let paintColor = '#3b2a1a';
+let paintTool  = 'pen';          // pen | line | pick
+const TOOL_HINT = {
+  pen:  '按住拖曳可以連續畫。',
+  line: '從起點按住拖到終點放開，會畫出直線。',
+  pick: '點畫布上任何一格，就會取用那格的顏色。',
+};
 
 function openRecipePaint(){
-  const sw = PAINT_COLORS.map((c,i) =>
-    `<button onclick="paintPick(${i})" style="width:26px;height:26px;border-radius:6px;
-      border:${paintColor===i?'3px solid var(--accent)':'2px solid var(--line2)'};
-      background:${c || 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/8px 8px'}"></button>`).join('');
+  const sw = PAINT_COLORS.map(c =>
+    `<button onclick="paintPick('${c}')" style="width:26px;height:26px;border-radius:6px;
+      border:${paintColor===c?'3px solid var(--accent)':'2px solid var(--line2)'};
+      background:${c}"></button>`).join('');
+
+  const tool = (id, label) =>
+    `<button class="btn sm ${paintTool===id?'green':'ghost'}" style="flex:1" onclick="paintSetTool('${id}')">${label}</button>`;
 
   openSheet(`<div class="sheethead"><h3>🎨 畫圖示</h3><button class="close" onclick="openCustomRecipe()">✕</button></div>
-    <div class="small" style="margin-bottom:8px">按住拖曳可以連續畫。左上角那格是橡皮擦。</div>
+    <div class="small" style="margin-bottom:8px">${TOOL_HINT[paintTool]}</div>
+    <div style="display:flex;gap:5px;margin-bottom:8px">
+      ${tool('pen','✏️ 筆刷')}${tool('line','📏 直線')}${tool('pick','💧 選色')}
+      <button class="btn sm ${paintColor===null?'green':'ghost'}" style="flex:1" onclick="paintPick(null)">🧽 橡皮擦</button>
+    </div>
     <div style="text-align:center;margin-bottom:10px">
       <canvas id="rcPaint" width="${PAINT_GRID*PAINT_CELL}" height="${PAINT_GRID*PAINT_CELL}"
         style="border:2px solid var(--line2);border-radius:8px;background:var(--card);touch-action:none;cursor:crosshair"></canvas>
@@ -171,22 +186,54 @@ function openRecipePaint(){
         <div class="small">清單圖示</div>
       </div>
     </div>
-    <div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-bottom:10px">${sw}</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;justify-content:center;align-items:center;margin-bottom:10px">
+      ${sw}
+      <label title="自訂顏色" style="width:26px;height:26px;border-radius:6px;cursor:pointer;position:relative;overflow:hidden;
+        border:2px solid var(--line2);
+        background:conic-gradient(red,#ff0,#0f0,#0ff,#00f,#f0f,red)">
+        <input type="color" value="${paintColor || '#3b2a1a'}" oninput="paintPick(this.value)"
+          style="position:absolute;inset:-6px;width:200%;height:200%;border:none;padding:0;opacity:0;cursor:pointer">
+      </label>
+      <span style="width:26px;height:26px;border-radius:6px;border:2px solid var(--ink2);
+        background:${paintColor || 'repeating-conic-gradient(#ccc 0% 25%, #fff 0% 50%) 50%/8px 8px'}"></span>
+    </div>
     <button class="btn ghost sm" style="width:100%;margin-bottom:6px" onclick="paintClear()">🗑️ 全部清掉</button>
     <button class="btn green" style="width:100%" onclick="openCustomRecipe()">完成</button>`);
 
   bindPaint();
 }
-function paintPick(i){ paintColor = i; openRecipePaint(); }
+function paintPick(c){ paintColor = c; openRecipePaint(); }
+function paintSetTool(t){ paintTool = t; openRecipePaint(); }
 function paintClear(){ rDraft.px.fill(0); drawPaint(); }
 
-function drawPaint(){
+/* Bresenham：直線工具要走過的格子 */
+function linePixels(x0,y0,x1,y1){
+  const out = [], dx = Math.abs(x1-x0), dy = -Math.abs(y1-y0);
+  const sx = x0<x1 ? 1 : -1, sy = y0<y1 ? 1 : -1;
+  let err = dx + dy;
+  for(;;){
+    out.push([x0,y0]);
+    if(x0===x1 && y0===y1) break;
+    const e2 = 2*err;
+    if(e2 >= dy){ err += dy; x0 += sx; }
+    if(e2 <= dx){ err += dx; y0 += sy; }
+  }
+  return out;
+}
+
+function drawPaint(ghost){
   const cv = document.getElementById('rcPaint'); if(!cv) return;
   const c = cv.getContext('2d');
   c.clearRect(0,0,cv.width,cv.height);
   for(let y=0; y<PAINT_GRID; y++) for(let x=0; x<PAINT_GRID; x++){
     const v = rDraft.px[y*PAINT_GRID+x];
-    if(v > 0){ c.fillStyle = PAINT_COLORS[v]; c.fillRect(x*PAINT_CELL, y*PAINT_CELL, PAINT_CELL, PAINT_CELL); }
+    if(v){ c.fillStyle = v; c.fillRect(x*PAINT_CELL, y*PAINT_CELL, PAINT_CELL, PAINT_CELL); }
+  }
+  if(ghost){                                    // 直線工具拖曳中的預覽
+    c.globalAlpha = 0.55;
+    c.fillStyle = paintColor || '#ffffff';
+    for(const [x,y] of ghost) c.fillRect(x*PAINT_CELL, y*PAINT_CELL, PAINT_CELL, PAINT_CELL);
+    c.globalAlpha = 1;
   }
   c.strokeStyle = 'rgba(0,0,0,.08)'; c.lineWidth = 1;
   for(let i=1; i<PAINT_GRID; i++){
@@ -203,24 +250,51 @@ function drawPreviews(){
     p.clearRect(0,0,PAINT_GRID,PAINT_GRID);
     for(let y=0; y<PAINT_GRID; y++) for(let x=0; x<PAINT_GRID; x++){
       const v = rDraft.px[y*PAINT_GRID+x];
-      if(v > 0){ p.fillStyle = PAINT_COLORS[v]; p.fillRect(x,y,1,1); }
+      if(v){ p.fillStyle = v; p.fillRect(x,y,1,1); }
     }
   }
 }
 function bindPaint(){
   const cv = document.getElementById('rcPaint'); if(!cv) return;
-  let down = false;
-  const put = ev => {
+  let down = false, start = null;
+
+  const cell = ev => {
     const r = cv.getBoundingClientRect();
     const x = Math.floor((ev.clientX - r.left) / r.width  * PAINT_GRID);
     const y = Math.floor((ev.clientY - r.top)  / r.height * PAINT_GRID);
-    if(x<0||y<0||x>=PAINT_GRID||y>=PAINT_GRID) return;
-    rDraft.px[y*PAINT_GRID+x] = paintColor;
-    drawPaint();
+    return (x<0||y<0||x>=PAINT_GRID||y>=PAINT_GRID) ? null : [x,y];
   };
-  cv.addEventListener('pointerdown', e => { down = true; cv.setPointerCapture(e.pointerId); put(e); });
-  cv.addEventListener('pointermove', e => { if(down) put(e); });
-  cv.addEventListener('pointerup',   () => { down = false; });
+  const paint = (x,y) => { rDraft.px[y*PAINT_GRID+x] = paintColor || 0; };
+
+  cv.addEventListener('pointerdown', e => {
+    const p = cell(e); if(!p) return;
+    cv.setPointerCapture(e.pointerId);
+    if(paintTool === 'pick'){
+      paintColor = rDraft.px[p[1]*PAINT_GRID+p[0]] || null;
+      paintTool = 'pen';                      // 取完色直接回到筆刷，少按一次
+      openRecipePaint();
+      return;
+    }
+    down = true; start = p;
+    if(paintTool === 'pen'){ paint(p[0],p[1]); drawPaint(); }
+    else drawPaint(linePixels(p[0],p[1],p[0],p[1]));
+  });
+
+  cv.addEventListener('pointermove', e => {
+    if(!down) return;
+    const p = cell(e); if(!p) return;
+    if(paintTool === 'pen'){ paint(p[0],p[1]); drawPaint(); }
+    else drawPaint(linePixels(start[0],start[1],p[0],p[1]));
+  });
+
+  cv.addEventListener('pointerup', e => {
+    if(down && paintTool === 'line'){
+      const p = cell(e) || start;
+      for(const [x,y] of linePixels(start[0],start[1],p[0],p[1])) paint(x,y);
+    }
+    down = false; start = null; drawPaint();
+  });
+
   drawPaint();
 }
 /* 匯出成 16×16 的 PNG dataURL，約 1KB，塞得進 localStorage */
@@ -230,7 +304,7 @@ function paintToDataURL(){
   const c = cv.getContext('2d');
   for(let y=0; y<PAINT_GRID; y++) for(let x=0; x<PAINT_GRID; x++){
     const v = rDraft.px[y*PAINT_GRID+x];
-    if(v > 0){ c.fillStyle = PAINT_COLORS[v]; c.fillRect(x,y,1,1); }
+    if(v){ c.fillStyle = v; c.fillRect(x,y,1,1); }
   }
   return cv.toDataURL('image/png');
 }
@@ -244,7 +318,7 @@ function createCustomRecipe(){
 
   if(!nm){ toast('先取個名字'); return; }
   if(!Object.keys(ings).length){ toast('至少要選一種材料'); return; }
-  if(!d.px.some(v => v > 0)){ toast('先畫一張圖示'); return; }
+  if(!d.px.some(v => v)){ toast('先畫一張圖示'); return; }
 
   const clash = recipeClash(ings, d.bake, null);
   if(clash){
