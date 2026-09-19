@@ -1,0 +1,9 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "farmgame-ai",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-19",
+  // Anthropic SDK 需要 Node 內建模組（stream/buffer 等）
+  "compatibility_flags": ["nodejs_compat"],
+  "observability": { "enabled": true }
+}

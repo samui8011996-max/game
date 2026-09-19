@@ -1,0 +1,17 @@
+# 機密：wrangler 本機 secret，絕對不能上傳（裡面是 Anthropic API key）
+.dev.vars
+.dev.vars.*
+*.env
+.env
+
+# 相依套件與建置產物
+node_modules/
+.wrangler/
+
+# 與遊戲無關的隨附繪圖軟體
+sai2-20241123-64bit-ja/
+
+# 作業系統雜項
+Thumbs.db
+desktop.ini
+.DS_Store
