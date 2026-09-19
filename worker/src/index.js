@@ -129,14 +129,127 @@ function buildQuestSystem(b, asks) {
   return lines.join("\n");
 }
 
+/* ---------------- 共享食譜（D1） ---------------- */
+const MAX_INGREDIENTS = 5;
+const MAX_QTY         = 5;
+const MAX_IMG_BYTES   = 4096;
+const ICON_PX         = 32;
+const DAILY_SUBMITS   = 3;
+const ALLOWED_BAKE    = [5000, 9000, 13000];
+
+/* 客戶端宣稱送來的是 32x32 PNG，但那是客戶端說的。
+   直接讀 PNG 檔頭的 IHDR（固定在第 16~23 位元組）自己確認。 */
+function validIcon(dataUrl) {
+  if (typeof dataUrl !== "string") return false;
+  const m = /^data:image\/png;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl);
+  if (!m) return false;
+  let bin;
+  try {
+    bin = atob(m[1]);
+  } catch {
+    return false;
+  }
+  if (bin.length > MAX_IMG_BYTES || bin.length < 24) return false;
+  const b = (i) => bin.charCodeAt(i);
+  const sig = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  if (sig.some((v, i) => b(i) !== v)) return false;
+  const u32 = (o) => (b(o) << 24) | (b(o + 1) << 16) | (b(o + 2) << 8) | b(o + 3);
+  return u32(16) === ICON_PX && u32(20) === ICON_PX;
+}
+
+function validIngredients(ings) {
+  if (!ings || typeof ings !== "object" || Array.isArray(ings)) return false;
+  const keys = Object.keys(ings);
+  if (!keys.length || keys.length > MAX_INGREDIENTS) return false;
+  return keys.every(
+    (k) => /^[a-z_]{1,24}$/.test(k) && Number.isInteger(ings[k]) && ings[k] >= 1 && ings[k] <= MAX_QTY
+  );
+}
+
+const cleanName = (v) => str(v, 16).replace(/[<>&"'\\]/g, "").trim();
+
+async function listRecipes(env, origin) {
+  const { results } = await env.DB.prepare(
+    "SELECT id, name, ingredients, knead, bake_ms, img, author FROM recipes WHERE status = 'public' ORDER BY created_at DESC LIMIT 50"
+  ).all();
+  const recipes = (results || []).map((r) => ({
+    id: r.id,
+    nm: r.name,
+    ingredients: JSON.parse(r.ingredients),
+    knead: r.knead,
+    bakeMs: r.bake_ms,
+    img: r.img,
+    author: r.author || "",
+  }));
+  return json({ recipes }, 200, origin);
+}
+
+async function submitRecipe(body, env, origin) {
+  const name = cleanName(body.nm);
+  const author = cleanName(body.author);
+  const authorId = str(body.authorId, 64);
+  const knead = Number(body.knead);
+  const bakeMs = Number(body.bakeMs);
+
+  if (!name) return json({ error: "name required" }, 400, origin);
+  if (!/^[A-Za-z0-9_-]{8,64}$/.test(authorId)) return json({ error: "bad authorId" }, 400, origin);
+  if (!validIngredients(body.ingredients)) return json({ error: "bad ingredients" }, 400, origin);
+  if (!Number.isInteger(knead) || knead < 0 || knead > 6) return json({ error: "bad knead" }, 400, origin);
+  if (!ALLOWED_BAKE.includes(bakeMs)) return json({ error: "bad bakeMs" }, 400, origin);
+  if (!validIcon(body.img)) return json({ error: "icon must be a 32x32 png under 4KB" }, 400, origin);
+
+  const since = Date.now() - 86400000;
+  const { results } = await env.DB.prepare(
+    "SELECT COUNT(*) AS n FROM recipes WHERE author_id = ? AND created_at > ?"
+  )
+    .bind(authorId, since)
+    .all();
+  if ((results?.[0]?.n || 0) >= DAILY_SUBMITS)
+    return json({ error: "daily limit reached" }, 429, origin);
+
+  const id = "sh_" + crypto.randomUUID().replace(/-/g, "").slice(0, 16);
+  await env.DB.prepare(
+    "INSERT INTO recipes (id, name, ingredients, knead, bake_ms, img, author, author_id, status, created_at) VALUES (?,?,?,?,?,?,?,?,'pending',?)"
+  )
+    .bind(id, name, JSON.stringify(body.ingredients), knead, bakeMs, body.img, author, authorId, Date.now())
+    .run();
+
+  return json({ ok: true, id, status: "pending" }, 200, origin);
+}
+
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin");
+    const path = new URL(request.url).pathname;
 
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors(origin) });
+
+    /* 公開讀取，不需要 token */
+    if (path === "/recipes" && request.method === "GET") {
+      try {
+        return await listRecipes(env, origin);
+      } catch {
+        return json({ error: "db" }, 500, origin);
+      }
+    }
+
     if (request.method !== "POST") return json({ error: "POST only" }, 405, origin);
     if (env.GAME_TOKEN && request.headers.get("x-game-token") !== env.GAME_TOKEN)
       return json({ error: "bad token" }, 403, origin);
+
+    if (path === "/recipes") {
+      let sub;
+      try {
+        sub = await request.json();
+      } catch {
+        return json({ error: "bad json" }, 400, origin);
+      }
+      try {
+        return await submitRecipe(sub, env, origin);
+      } catch {
+        return json({ error: "db" }, 500, origin);
+      }
+    }
 
     let body;
     try {

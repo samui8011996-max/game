@@ -507,7 +507,9 @@ openPickRecipe = function(){
     extra += `<div class="small" style="margin-bottom:4px">我設計的料理</div>` + mine.map(id =>
       `<div class="row"><div class="e">${dishIcon(id)}</div>
        <div class="info"><div class="n">${S.customRecipes[id].nm}</div>
-       <div class="small">$${S.customRecipes[id].price}</div></div>
+       <div class="small">$${S.customRecipes[id].price}${S.customRecipes[id].submitted ? '・已投稿' : ''}</div></div>
+       <button class="btn sm ${S.customRecipes[id].submitted ? 'dis' : 'gold'}"
+         ${S.customRecipes[id].submitted ? '' : `onclick="shareRecipe('${id}')"`}>投稿</button>
        <button class="btn sm ghost" style="color:var(--danger)" onclick="deleteCustomRecipe('${id}')">刪除</button></div>`).join('')
       + `<div class="hr"></div>`;
   }

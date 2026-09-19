@@ -17,9 +17,19 @@ const LEARN_MIN = 40;
 
 const SHARED = {
   mock: true,               // true = 用內建範例，完全不連網
-  endpoint: '',             // 之後填 D1 的 Worker 端點
+  endpoint: '',             // 部署後填：https://farmgame-ai.你的帳號.workers.dev/recipes
+  token: '',                // 對應 Worker 的 GAME_TOKEN
   timeoutMs: 8000,
 };
+
+/* 匿名身分：投稿次數限制要靠它，不做帳號系統 */
+function playerId(){
+  if(!S.playerId){
+    S.playerId = 'p' + crypto.randomUUID().replace(/-/g, '').slice(0, 20);
+    save();
+  }
+  return S.playerId;
+}
 
 function learnCost(ings){
   let c = 0;
@@ -100,6 +110,36 @@ function registerShared(){
       shop: true, learnCost: learnCost(r.ingredients),
     };
     if(r.img && /^data:image\/png;base64,/.test(r.img)) FOOD_IMG_SRC[r.id] = r.img;
+  }
+}
+
+/* ---------------- 投稿 ---------------- */
+async function shareRecipe(id){
+  const r = S.customRecipes && S.customRecipes[id];
+  if(!r) return;
+  if(r.submitted){ toast('這道已經投稿過了'); return; }
+  if(!SHARED.endpoint){ toast('還沒設定投稿位址'); return; }
+
+  toast('投稿中…');
+  try{
+    const res = await fetch(SHARED.endpoint, {
+      method:'POST',
+      headers:{ 'content-type':'application/json', 'x-game-token':SHARED.token },
+      body: JSON.stringify({
+        nm:r.nm, ingredients:r.ingredients, knead:r.knead, bakeMs:r.bakeMs,
+        img:r.img, author:user || '', authorId:playerId(),
+      }),
+    });
+    const b = await res.json().catch(() => ({}));
+    if(!res.ok){
+      toast(b.error === 'daily limit reached' ? '今天投稿次數已用完' : `投稿失敗：${b.error || res.status}`);
+      return;
+    }
+    r.submitted = true; save();
+    toast('📮 投稿完成，審核通過後就會出現在商店');
+    openPickRecipe();
+  }catch{
+    toast('連不上，晚點再試');
   }
 }
 
