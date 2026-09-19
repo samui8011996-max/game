@@ -70,7 +70,18 @@ function registerCustomRecipe(id, r){
 /* ---------------- 設計中的草稿 ---------------- */
 let rDraft = null;
 function newDraft(){
-  return { ings:{}, knead:3, bake:9000, nm:'', px:new Array(PAINT_GRID*PAINT_GRID).fill(0) };
+  return { ings:{}, knead:3, bake:9000, nm:'', plate:true,
+           px:new Array(PAINT_GRID*PAINT_GRID).fill(0) };
+}
+
+/* 盤子當底圖層，玩家不必自己畫；plate_empty.png 剛好也是 32×32 */
+const PLATE_SRC = 'plate_empty.png';
+function drawPlateInto(c, size){
+  if(!rDraft || !rDraft.plate) return;
+  const im = npcImg(PLATE_SRC);
+  if(!im || !im.complete || !im.naturalWidth) return;
+  c.imageSmoothingEnabled = false;
+  c.drawImage(im, 0,0, im.naturalWidth, im.naturalHeight, 0,0, size, size);
 }
 
 function openCustomRecipe(){
@@ -199,7 +210,11 @@ function openRecipePaint(){
         </div>
       </div>
     </div>
-    <button class="btn ghost sm" style="width:100%;margin-bottom:6px" onclick="paintClear()">🗑️ 全部清掉</button>
+    <div style="display:flex;gap:6px;margin-bottom:6px">
+      <button class="btn sm ${rDraft.plate?'green':'ghost'}" style="flex:1" onclick="paintTogglePlate()">
+        🍽️ 盤子底圖${rDraft.plate?'：開':'：關'}</button>
+      <button class="btn ghost sm" style="flex:1" onclick="paintClear()">🗑️ 清掉我畫的</button>
+    </div>
     <button class="btn green" style="width:100%" onclick="openCustomRecipe()">完成</button>`);
 
   bindPaint();
@@ -309,6 +324,7 @@ function bindWheel(){
   drawWheel();
 }
 function paintClear(){ rDraft.px.fill(0); drawPaint(); }
+function paintTogglePlate(){ rDraft.plate = !rDraft.plate; openRecipePaint(); }
 
 /* Bresenham：直線工具要走過的格子 */
 function linePixels(x0,y0,x1,y1){
@@ -329,6 +345,7 @@ function drawPaint(ghost){
   const cv = document.getElementById('rcPaint'); if(!cv) return;
   const c = cv.getContext('2d');
   c.clearRect(0,0,cv.width,cv.height);
+  drawPlateInto(c, cv.width);
   for(let y=0; y<PAINT_GRID; y++) for(let x=0; x<PAINT_GRID; x++){
     const v = rDraft.px[y*PAINT_GRID+x];
     if(v){ c.fillStyle = v; c.fillRect(x*PAINT_CELL, y*PAINT_CELL, PAINT_CELL, PAINT_CELL); }
@@ -353,6 +370,7 @@ function drawPreviews(){
     const pv = document.getElementById(id); if(!pv) continue;
     const p = pv.getContext('2d');
     p.clearRect(0,0,PAINT_GRID,PAINT_GRID);
+    drawPlateInto(p, PAINT_GRID);
     for(let y=0; y<PAINT_GRID; y++) for(let x=0; x<PAINT_GRID; x++){
       const v = rDraft.px[y*PAINT_GRID+x];
       if(v){ p.fillStyle = v; p.fillRect(x,y,1,1); }
@@ -399,6 +417,8 @@ function bindPaint(){
     down = false; start = null; drawPaint();
   });
 
+  const pi = npcImg(PLATE_SRC);                  // 盤子圖可能還沒載完，載好再重畫一次
+  if(pi && !pi.complete) pi.addEventListener('load', () => drawPaint(), { once:true });
   drawPaint();
 }
 /* 匯出成 16×16 的 PNG dataURL，約 1KB，塞得進 localStorage */
@@ -406,6 +426,7 @@ function paintToDataURL(){
   const cv = document.createElement('canvas');
   cv.width = PAINT_GRID; cv.height = PAINT_GRID;
   const c = cv.getContext('2d');
+  drawPlateInto(c, PAINT_GRID);              // 盤子燒進成品圖，遊戲端就不用管圖層
   for(let y=0; y<PAINT_GRID; y++) for(let x=0; x<PAINT_GRID; x++){
     const v = rDraft.px[y*PAINT_GRID+x];
     if(v){ c.fillStyle = v; c.fillRect(x,y,1,1); }
