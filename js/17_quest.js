@@ -9,7 +9,7 @@
 
 const QUEST_PAY_MUL   = 2.2;   // 報酬 = 物品價值 × 數量 × 這個（要比自己賣掉划算）
 const QUEST_MIN_AFF   = 10;    // 好感低於此不會開口拜託
-const QUEST_CHANCE    = 1;     // 條件符合就一定開口。想讓委託變稀有再調低（0~1）
+const QUEST_CHANCE    = 0.75;  // 好感與每日限制都通過後，還要再過這關（1=必定・0=永不）
 const QUEST_CACHE     = { target:3, refillAt:1 };
 
 /* 可指定的物品：角色喜歡的東西 + 當下種得出來的作物。
