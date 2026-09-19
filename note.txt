@@ -25,3 +25,20 @@ console.log('era',S.era,'partner',S.partner,'child',S.child,'left',S.childLeftHo
 // 除錯顯示框
 DEBUG_SENSE=true;      // 互動感應範圍
 DEBUG_CROPCELL=true;   // 農田格座標
+
+// 把佩德羅叫到港口（測送禮／聊天／委託都從這行開始）
+S.era=18; S.port.merchants=['Pedro']; S.port.lastTs=Date.now(); S.port.relations.Pedro={aff:30,met:true,lastChat:0}; save(); goScene('port');
+
+// 送禮偏好：鱈魚+10(最愛) 羊肉+6 肉桂-2(他自己在賣)
+S.store.cod=5; S.store.mutton=3; S.extras.cinnamon=3; save();
+
+// 委託（跳過好感門檻與每日限制）
+forceQuest('Pedro');            // 隨機物品
+forceQuest('Pedro','cod',3);    // 指定鱈魚3個
+S.store.cod=9; save();          // 湊齊材料好交付
+
+// AI 對話／委託說辭：mock 不連網不花錢
+AI_CHAT.enabled=true; AI_CHAT.mock=true;    // 第一次聊天仍是靜態，等背景備好貨再聊
+AI_CHAT.enabled=false;                       // 關掉，回到原本的靜態對話
+
+// 自訂食譜：食譜本 → 研發新料理

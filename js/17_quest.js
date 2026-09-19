@@ -9,7 +9,7 @@
 
 const QUEST_PAY_MUL   = 2.2;   // 報酬 = 物品價值 × 數量 × 這個（要比自己賣掉划算）
 const QUEST_MIN_AFF   = 10;    // 好感低於此不會開口拜託
-const QUEST_CHANCE    = 0.5;   // 符合條件時每天一次的觸發機率
+const QUEST_CHANCE    = 1;     // 條件符合就一定開口。想讓委託變稀有再調低（0~1）
 const QUEST_CACHE     = { target:3, refillAt:1 };
 
 /* 可指定的物品：角色喜歡的東西 + 當下種得出來的作物。
@@ -135,6 +135,30 @@ function maybeOfferQuest(id){
     day: S.day,
   };
   save();
+}
+
+/* 測試用：跳過好感門檻與每日限制，直接生一個委託出來
+   forceQuest('Pedro')        隨機物品
+   forceQuest('Pedro','cod',3) 指定物品與數量 */
+function forceQuest(id, item, qty){
+  if(!S.quests) S.quests = {};
+  if(!S.questRoll) S.questRoll = {};
+  delete S.quests[id];
+  delete S.questRoll[id];
+  if(item){
+    const spec = { item, qty: qty || 3 };
+    S.quests[id] = { item:spec.item, qty:spec.qty, money:questPay(spec), aff:questAff(spec),
+      why: pickOne(QUEST_WHY_FALLBACK).replace('{item}', ingNm(item)),
+      thanks: pickOne(QUEST_THANKS_FALLBACK), day:S.day };
+    save();
+  }else{
+    const rel = S.port.relations[id] || (S.port.relations[id] = {aff:QUEST_MIN_AFF, met:true, lastChat:0});
+    if(rel.aff < QUEST_MIN_AFF) rel.aff = QUEST_MIN_AFF;
+    maybeOfferQuest(id);
+  }
+  const q = S.quests[id];
+  toast(q ? `委託：${ingNm(q.item)}×${q.qty}　$${fmt(q.money)}　好感+${q.aff}` : '產生失敗');
+  return q;
 }
 
 function questHave(k){ return (S.store[k] || 0) + (S.extras[k] || 0); }
