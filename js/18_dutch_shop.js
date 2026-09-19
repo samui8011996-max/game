@@ -18,7 +18,8 @@ const LEARN_MIN = 40;
 const SHARED = {
   mock: false,              // true = 用內建範例，完全不連網
   endpoint: 'https://farmgame-ai.samui8011996.workers.dev/recipes',
-  token: '',                // ← 填你設的 GAME_TOKEN。只有投稿要用，讀取不需要
+  token: 'v10JZ9iAMQ3xDb8HWSNPdqBtVfTXYeUzEKwhyOs4',   // 只有投稿要用，讀取不需要
+                            // 前端藏不住，僅擋隨機掃描；真正的防線是伺服器端驗證與每日上限
   timeoutMs: 8000,
 };
 
