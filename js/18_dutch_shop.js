@@ -16,9 +16,9 @@ const LEARN_MUL = 2.8;      // 學費 = 材料成本 × 這個
 const LEARN_MIN = 40;
 
 const SHARED = {
-  mock: true,               // true = 用內建範例，完全不連網
-  endpoint: '',             // 部署後填：https://farmgame-ai.你的帳號.workers.dev/recipes
-  token: '',                // 對應 Worker 的 GAME_TOKEN
+  mock: false,              // true = 用內建範例，完全不連網
+  endpoint: 'https://farmgame-ai.samui8011996.workers.dev/recipes',
+  token: '',                // ← 填你設的 GAME_TOKEN。只有投稿要用，讀取不需要
   timeoutMs: 8000,
 };
 
